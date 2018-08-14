@@ -1,0 +1,152 @@
+clear all; clc;
+close all;
+
+%% KALMAN ESTIMATOR
+% PART OF MTP 2017-18 
+% COMPLEX STATE EVOLUTION tracking by two independent trackers. Working
+% against each other
+% Coder: Vinaykumar Dubey
+%% The number of iterations 
+L = 200;
+r = 1;                          % Circular Trajectory 
+p = randn(1,1) > 0;
+theta0 = 0*pi;
+% Resolution in THETA; k = 26 = 24.28, 51 =24.75, 99 = 24.41
+k = 26;
+theta = 2*k*pi/200;
+A = r*[cos(theta) sin(theta); -sin(theta) cos(theta)];
+X = [cos(theta0); sin(theta0)];
+Y = X;
+SIG_W = 0.001; % STATE NOISE VARIANCE
+SIG_VA = 1; % OBSERVATION NOISE VARIANCE
+SIG_VB = 0.6; % OBSERVATION NOISE VARIANCE
+ax = 3;
+
+for  k = 1:10
+    
+    % STATE EVOLUTION and OBSERVED VECTORS    
+for i = 2:L
+    W = SIG_W*[randn(1,1);randn(1,1)]; % REALIZATION OF THE STATE NOISE PROCESS
+    VA = SIG_VA*[randn(1,1);randn(1,1)]; % REALIZATION OF THE OBSERVATION NOISE PROCESS
+    VB = SIG_VB*[randn(1,1);randn(1,1)]; % REALIZATION OF THE OBSERVATION NOISE PROCESS
+    X(:,i) = A*X(:,i-1) + W; % NATURAL STATE EVOLUTION
+    YA(:,i) = X(:,i) + VA ; % OBSERVATIONS
+    YB(:,i) = X(:,i) + VB ; % OBSERVATIONS
+end
+
+M_SIG_VA = [SIG_VA^2 0; 0 SIG_VA^2]; % ACTUAL NOISE COVARIANCE MATRIX  
+M_SIG_VB = [SIG_VB^2 0; 0 SIG_VB^2]; % ACTUAL NOISE COVARIANCE MATRIX 
+M_SIG_W = [SIG_W^2 0; 0 SIG_W^2]; % ACTUAL STATE NOISE COVARIANCE MATRIX
+
+%% Trackers Configuration 
+
+X_hatA = [-1;0]; % INITIALIZATION OF THE KALMAN ESTIMATE X_hat_0/0
+X_pred_hatA = [-1;0]; % ONE STEP AHEAD PREDICTION INITIALIZATION
+EA(1) = 1;
+M_STATE_oldA = eye(2); % This corresonds to the error covariance matrix SIGMA_K-1/K-1 set at K-1 = 0;
+aa = trace(M_SIG_VA); % Some form of initialization;
+VAR_e01 = trace(A*M_STATE_oldA*A' + M_SIG_W); % This correponds to the initial value of SIGMA_K/K-1
+GA(1) = VAR_e01/(VAR_e01 + aa); % KALMAN GAIN INITIALIZATION
+MV_cumA = eye(2); % Initilization of the NOISE VARIANCE MATRIX
+
+
+X_hatB = [-1;0]; % INITIALIZATION OF THE KALMAN ESTIMATE X_hat_0/0
+X_pred_hatB = [-1;0]; % ONE STEP AHEAD PREDICTION INITIALIZATION
+EA(1) = 1;
+M_STATE_oldB = eye(2); % This corresonds to the error covariance matrix SIGMA_K-1/K-1 set at K-1 = 0;
+bb = trace(M_SIG_VB); % Some form of initialization;
+VAR_e02 = trace(A*M_STATE_oldB*A' + M_SIG_W); % This correponds to the initial value of SIGMA_K/K-1
+GB(1) = VAR_e02/(VAR_e02 + bb); % KALMAN GAIN INITIALIZATION
+MV_cumB = eye(2); % Initilization of the NOISE VARIANCE MATRIX
+    
+    
+for i = 2:L % SERIAL ARRIVAL OF OBSERVATION VECTORS
+    OBSpA = YA(:,i); % CURRENT OBSERVATION VECTOR
+    OBSp_perpA = OBSpA - A*X_hatA(:,i-1); % INNOVATION DERIVED FROM THE CURRENT OBSERVATION VECTOR
+    M_OBSA = OBSp_perpA*OBSp_perpA'; % CURRENT INNOVATION COVARIANCE MATRIX
+    X_hatA(:,i) = A*X_hatA(:,i-1) + GA(i-1)*OBSp_perpA; % MAIN KALMAN ESTIMATOR EQUATION
+    X_pred_hatA(:,i) = A*X_hatA(:,i); % ONE STEP AHEAD PREDICTION EQUATION
+    M_STATE_newA = (1-2*GA(i-1))*A*M_STATE_oldA*A' + M_SIG_W + GA(i-1)^2*M_OBSA; % ERROR COVARIANCE UPDATION EQUATION
+    MVkA = M_OBSA - A*M_STATE_oldA*A' - M_SIG_W; % NOISE COVARIANCE ESTIMATE FROM CURRENT INNOVATION
+    MV_cumA = ((i-1)/i)*MV_cumA + (1/i)*MVkA; % CUMULATIVE NOISE COVARIANCE ESTIMATE FROM ALL PAST INNOVATIONS
+    aa = trace(MV_cumA); % THE SCALAR EFFECTIVE NOISE VARIANCE
+    GA(i) = trace(M_STATE_newA)/(trace(M_STATE_newA) + aa); % KALMAN GAIN UPDATE
+    EA(i) = trace(M_STATE_oldA); % QUANTIFIED ERROR DERIVED FROM THE COVARIANCE MATRIX
+    M_STATE_oldA = M_STATE_newA;% TRANSFER OF VARIABLE from SIGMA_k-1/k-1 to SIGMA_k/k
+    
+    
+    
+    OBSpB = YB(:,i); % CURRENT OBSERVATION VECTOR
+    OBSp_perpB = OBSpB - A*X_hatB(:,i-1); % INNOVATION DERIVED FROM THE CURRENT OBSERVATION VECTOR
+    M_OBSB = OBSp_perpB*OBSp_perpB'; % CURRENT INNOVATION COVARIANCE MATRIX
+    X_hatB(:,i) = A*X_hatB(:,i-1) + GB(i-1)*OBSp_perpB; % MAIN KALMAN ESTIMATOR EQUATION
+    X_pred_hatB(:,i) = A*X_hatB(:,i); % ONE STEP AHEAD PREDICTION EQUATION
+    M_STATE_newB = (1-2*GB(i-1))*A*M_STATE_oldB*A' + M_SIG_W + GB(i-1)^2*M_OBSB; % ERROR COVARIANCE UPDATION EQUATION
+    MVkB = M_OBSB - A*M_STATE_oldB*A' - M_SIG_W; % NOISE COVARIANCE ESTIMATE FROM CURRENT INNOVATION
+    MV_cumB = ((i-1)/i)*MV_cumB + (1/i)*MVkB; % CUMULATIVE NOISE COVARIANCE ESTIMATE FROM ALL PAST INNOVATIONS
+    bb = trace(MV_cumB); % THE SCALAR EFFECTIVE NOISE VARIANCE
+    GB(i) = trace(M_STATE_newB)/(trace(M_STATE_newB) + bb); % KALMAN GAIN UPDATE
+    EB(i) = trace(M_STATE_oldB); % QUANTIFIED ERROR DERIVED FROM THE COVARIANCE MATRIX
+    M_STATE_oldB = M_STATE_newB;% TRANSFER OF VARIABLE from SIGMA_k-1/k-1 to SIGMA_k/k   
+    
+    h = figure; 
+    subplot()
+    B = X; plot(B(1,i),B(2,i),'*r','LineWidth', 3); hold on;
+    B = X_hatA; plot(B(1,i),B(2,i),'*b','LineWidth', 3); hold on;
+    B = X_hatB; plot(B(1,i),B(2,i),'*g','LineWidth', 3); hold on;
+    xlabel('t(s)'); ylabel('x(m)'); title('Tracking of positional variable');
+    legend('True Position','Tracker 1','Tracker 2');
+    axis([-ax ax -ax ax])
+    pause(0.5)
+
+    
+    saveas(h,sprintf('FIG1v%d.png',i));
+    hold off;
+end
+
+
+% TERMINATION POINT to detect convergence
+for i = 1:L-1,
+    R = abs((EA(i) - EA(i+1))/EA(i))*100;
+    if R < 1,
+%         disp('The CONVERGENCE TIME IN UNITS IS...');
+        i;
+        break;
+    end
+end
+TA(k) = i;
+for i = 1:L-1,
+    R = abs((EB(i) - EB(i+1))/EB(i))*100;
+    if R < 1,
+%         disp('The CONVERGENCE TIME IN UNITS IS...');
+        i;
+        break;
+    end
+end
+
+TB(k) = i;
+end
+
+mean(TA)
+mean(TB)
+
+
+% ACTUAL AND ESTIMATED STATE TRAJECTORIES 
+figure;B = X;line(B(1,:),B(2,:),'Marker','*','LineStyle','-'); hold on;
+% xlabel([r,theta]);
+grid on;title('Original State Evolution'); print('originalwe','-dpng');
+
+figure;B = YA;line(B(1,:),B(2,:),'Marker','*','LineStyle','-'); hold on;
+grid on;title('Observed state evolution A'); print('obsawe','-dpng')
+
+figure;B = X_hatA;line(B(1,:),B(2,:),'Marker','*','LineStyle','-'); hold on;
+grid on;title('Estimated state evolution A'); print('estawe','-dpng')
+
+figure;B = YB;line(B(1,:),B(2,:),'Marker','*','LineStyle','-'); hold on;
+grid on;title('Observed state evolution B'); print('obsbwe','-dpng')
+
+figure;B = X_hatB;line(B(1,:),B(2,:),'Marker','*','LineStyle','-'); hold on;
+grid on;title('Estimated state evolution B'); print('estbwe','-dpng')
+
+figure; stem(EA);grid on;title('State tracking error for A'); print('errawe','-dpng')
+figure; stem(EB);grid on;title('State tracking error for B'); print('errbwe','-dpng')
